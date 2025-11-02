@@ -317,6 +317,320 @@ def factor_perfect_square_trinomial(poly: Polynomial, steps: List[str]) -> Optio
     return result
 
 
+def is_perfect_cube(n: int) -> Tuple[bool, int]:
+    """Check if n is a perfect cube. Returns (is_cube, cube_root)."""
+    if n == 0:
+        return True, 0
+
+    # Handle negative numbers
+    sign = 1 if n > 0 else -1
+    n_abs = abs(n)
+
+    # Find cube root
+    cube_root = round(n_abs ** (1/3))
+
+    # Check a range around the computed value due to floating point precision
+    for cr in [cube_root - 1, cube_root, cube_root + 1]:
+        if cr >= 0 and cr ** 3 == n_abs:
+            return True, sign * cr
+
+    return False, 0
+
+
+def factor_sum_difference_of_cubes(poly: Polynomial, steps: List[str]) -> Optional[str]:
+    """
+    Check for and factor sum/difference of cubes:
+    - a³ + b³ = (a + b)(a² - ab + b²)
+    - a³ - b³ = (a - b)(a² + ab + b²)
+
+    Returns:
+        Factored form as string, or None if not applicable
+    """
+    # Must be degree 3 with only two terms (cubic term and constant)
+    if poly.degree() != 3:
+        return None
+
+    # Check if we have only two non-zero terms
+    if len(poly.coefficients) != 2:
+        # Check if middle terms are zero
+        if len(poly.coefficients) == 4:
+            if poly.coefficients[1] != 0 or poly.coefficients[2] != 0:
+                return None
+        else:
+            return None
+
+    a_cubed = poly.coefficients[0]
+    b_cubed = poly.coefficients[-1]
+
+    # Check if both terms are perfect cubes
+    is_a_cube, a = is_perfect_cube(abs(a_cubed))
+    is_b_cube, b = is_perfect_cube(abs(b_cubed))
+
+    if not (is_a_cube and is_b_cube):
+        return None
+
+    var = poly.variable
+
+    # Determine if it's sum or difference
+    if b_cubed > 0:
+        # Sum of cubes: a³ + b³
+        steps.append("Recognized as sum of cubes: a³ + b³ = (a + b)(a² - ab + b²)")
+        steps.append(f"  a³ = {a_cubed}, so a = {a}{var if a != 1 else var}")
+        steps.append(f"  b³ = {b_cubed}, so b = {b}")
+
+        # Build factored form
+        if a == 1:
+            factor1 = f"({var} + {b})"
+            factor2 = f"({var}² - {b}{var} + {b**2})"
+        else:
+            factor1 = f"({a}{var} + {b})"
+            # For (ax)³, we have (ax + b)(a²x² - abx + b²)
+            factor2 = f"({a**2}{var}² - {a*b}{var} + {b**2})"
+
+    else:
+        # Difference of cubes: a³ - b³
+        b = abs(b)  # Make b positive for display
+        steps.append("Recognized as difference of cubes: a³ - b³ = (a - b)(a² + ab + b²)")
+        steps.append(f"  a³ = {a_cubed}, so a = {a}{var if a != 1 else var}")
+        steps.append(f"  b³ = {b**3}, so b = {b}")
+
+        # Build factored form
+        if a == 1:
+            factor1 = f"({var} - {b})"
+            factor2 = f"({var}² + {b}{var} + {b**2})"
+        else:
+            factor1 = f"({a}{var} - {b})"
+            factor2 = f"({a**2}{var}² + {a*b}{var} + {b**2})"
+
+    result = f"{factor1}{factor2}"
+    steps.append(f"  Factored form: {result}")
+
+    return result
+
+
+def factor_by_grouping(poly: Polynomial, steps: List[str]) -> Optional[str]:
+    """
+    Factor a polynomial with 4 terms using grouping method.
+    Example: x³ + 3x² + 2x + 6 = x²(x + 3) + 2(x + 3) = (x² + 2)(x + 3)
+
+    Returns:
+        Factored form as string, or None if not applicable
+    """
+    # Must have exactly 4 terms
+    if len(poly.coefficients) != 4:
+        return None
+
+    steps.append("Attempting factoring by grouping (4 terms):")
+
+    a, b, c, d = poly.coefficients
+    var = poly.variable
+
+    # Try grouping first two and last two terms
+    # Group 1: ax³ + bx²
+    # Group 2: cx + d
+
+    from math import gcd
+
+    # Find GCF of first group
+    gcf1 = gcd(abs(a), abs(b))
+    if a < 0:
+        gcf1 = -gcf1
+
+    # Find GCF of second group
+    gcf2 = gcd(abs(c), abs(d))
+    if c < 0:
+        gcf2 = -gcf2
+
+    # Factor out GCF from each group
+    a1 = a // gcf1
+    b1 = b // gcf1
+    c1 = c // gcf2
+    d1 = d // gcf2
+
+    # Build group representations
+    if gcf1 == 1:
+        if b1 >= 0:
+            group1_str = f"{var}²({a1}{var} + {b1})"
+        else:
+            group1_str = f"{var}²({a1}{var} - {abs(b1)})"
+    else:
+        if b1 >= 0:
+            group1_str = f"{gcf1}{var}²({a1}{var} + {b1})"
+        else:
+            group1_str = f"{gcf1}{var}²({a1}{var} - {abs(b1)})"
+
+    if d1 >= 0:
+        group2_str = f"{gcf2}({c1}{var} + {d1})"
+    else:
+        group2_str = f"{gcf2}({c1}{var} - {abs(d1)})"
+
+    steps.append(f"  Group 1: {a}{var}³ + {b}{var}² = {group1_str}")
+    steps.append(f"  Group 2: {c}{var} + {d} = {group2_str}")
+
+    # Check if the binomials match
+    # The binomials should be (a1*x + b1) in both groups
+    if a1 == c1 and b1 == d1:
+        steps.append(f"  Common binomial factor found: ({a1}{var} + {b1})" if b1 >= 0 else f"  Common binomial factor found: ({a1}{var} - {abs(b1)})")
+
+        # Build the factored form
+        if b1 >= 0:
+            binomial = f"({a1}{var} + {b1})" if a1 != 1 else f"({var} + {b1})"
+        else:
+            binomial = f"({a1}{var} - {abs(b1)})" if a1 != 1 else f"({var} - {abs(b1)})"
+
+        # The other factor is (gcf1*x² + gcf2)
+        other_factor = f"({gcf1}{var}² + {gcf2})" if gcf1 != 1 else f"({var}² + {gcf2})"
+
+        result = f"{binomial}{other_factor}"
+        steps.append(f"  Factored form: {result}")
+
+        return result
+
+    steps.append("  No common binomial found - grouping method not applicable")
+    return None
+
+
+def synthetic_division(coefficients: List[int], zero: int) -> Tuple[List[int], int]:
+    """
+    Perform synthetic division of polynomial by (x - zero).
+
+    Args:
+        coefficients: Coefficients from highest to lowest degree
+        zero: The zero to divide by (for factor x - zero)
+
+    Returns:
+        Tuple of (quotient coefficients, remainder)
+    """
+    quotient = []
+    current = 0
+
+    for coef in coefficients:
+        current = current * zero + coef
+        quotient.append(current)
+
+    remainder = quotient.pop()
+    return quotient, remainder
+
+
+def find_rational_zeros(poly: Polynomial, steps: List[str]) -> List[Fraction]:
+    """
+    Find all rational zeros using the Rational Zero Theorem.
+
+    Returns:
+        List of rational zeros (as Fraction objects)
+    """
+    # Get leading coefficient and constant term
+    a_n = poly.coefficients[0]  # Leading coefficient
+    a_0 = poly.coefficients[-1]  # Constant term
+
+    if a_0 == 0:
+        # Zero is a root, factor it out
+        return [Fraction(0)]
+
+    # Find factors of constant term (p values)
+    p_factors = []
+    for i in range(1, abs(a_0) + 1):
+        if a_0 % i == 0:
+            p_factors.extend([i, -i])
+
+    # Find factors of leading coefficient (q values)
+    q_factors = []
+    for i in range(1, abs(a_n) + 1):
+        if a_n % i == 0:
+            q_factors.append(i)
+
+    # Generate all possible p/q combinations
+    possible_zeros = set()
+    for p in p_factors:
+        for q in q_factors:
+            possible_zeros.add(Fraction(p, q))
+
+    # Test each possible zero
+    zeros_found = []
+
+    for zero in sorted(possible_zeros):
+        # Evaluate polynomial at this zero
+        value = 0
+        for i, coef in enumerate(poly.coefficients):
+            power = poly.degree() - i
+            value += coef * (zero ** power)
+
+        if value == 0:
+            zeros_found.append(zero)
+
+    return zeros_found
+
+
+def factor_higher_degree(poly: Polynomial, steps: List[str]) -> Optional[str]:
+    """
+    Factor higher degree polynomials (degree ≥ 3) using Rational Zero Theorem
+    and synthetic division.
+
+    Returns:
+        Factored form as string, or None if not factorable
+    """
+    if poly.degree() < 3:
+        return None
+
+    steps.append(f"Factoring higher degree polynomial (degree {poly.degree()}):")
+    steps.append("Using Rational Zero Theorem to find possible rational zeros")
+
+    # Find rational zeros
+    zeros = find_rational_zeros(poly, steps)
+
+    if not zeros:
+        steps.append("  No rational zeros found - polynomial may be prime or require advanced methods")
+        return None
+
+    steps.append(f"  Possible rational zeros: {', '.join(str(z) for z in sorted(set(find_rational_zeros(poly, []))))}")
+    steps.append(f"  Actual zeros found: {', '.join(str(z) for z in zeros)}")
+
+    # Factor out each zero
+    factors = []
+    remaining_coeffs = poly.coefficients.copy()
+    var = poly.variable
+
+    for zero in zeros:
+        # Perform synthetic division
+        quotient, remainder = synthetic_division(remaining_coeffs, int(zero))
+
+        if remainder == 0:
+            # Build the factor
+            if zero >= 0:
+                factors.append(f"({var} - {zero})")
+            else:
+                factors.append(f"({var} + {abs(zero)})")
+
+            remaining_coeffs = quotient
+            steps.append(f"  Divided by ({var} - {zero}), quotient: {Polynomial(quotient, var)}")
+
+    # Check if remaining polynomial can be factored
+    if len(remaining_coeffs) > 1:
+        remaining_poly = Polynomial(remaining_coeffs, var)
+
+        if remaining_poly.degree() == 2:
+            # Try to factor the remaining quadratic
+            remaining_factored = factor_quadratic(remaining_poly, [])
+            if remaining_factored:
+                factors.append(remaining_factored)
+            else:
+                # Can't factor further, include as-is
+                factors.append(f"({remaining_poly})")
+        elif remaining_poly.degree() == 1:
+            # Linear factor
+            factors.append(f"({remaining_poly})")
+        else:
+            # Higher degree, can't factor further easily
+            factors.append(f"({remaining_poly})")
+
+    if factors:
+        result = "".join(factors)
+        steps.append(f"  Factored form: {result}")
+        return result
+
+    return None
+
+
 def factor_quadratic(poly: Polynomial, steps: List[str]) -> Optional[str]:
     """
     Factor a quadratic polynomial ax² + bx + c.
@@ -574,6 +888,22 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
 
         return result
 
+    # Try sum/difference of cubes
+    result = factor_sum_difference_of_cubes(reduced_poly, steps)
+
+    if result:
+        if gcf != 1:
+            result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+
+        if verbose:
+            steps.append("")
+            steps.append("=" * 60)
+            steps.append(f"FINAL ANSWER: {result}")
+            steps.append("=" * 60)
+            print("\n".join(steps))
+
+        return result
+
     if verbose:
         steps.append("No special patterns detected")
         steps.append("")
@@ -585,6 +915,47 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
             steps.append("-" * 60)
 
         result = factor_quadratic(reduced_poly, steps)
+
+        if result:
+            if gcf != 1:
+                result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+
+            if verbose:
+                steps.append("")
+                steps.append("=" * 60)
+                steps.append(f"FINAL ANSWER: {result}")
+                steps.append("=" * 60)
+                print("\n".join(steps))
+
+            return result
+
+    elif reduced_poly.degree() >= 3:
+        if verbose:
+            steps.append("Step 3: Factor higher degree polynomial")
+            steps.append("-" * 60)
+
+        # Try grouping for 4-term polynomials
+        if len(reduced_poly.coefficients) == 4:
+            result = factor_by_grouping(reduced_poly, steps)
+
+            if result:
+                if gcf != 1:
+                    result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+
+                if verbose:
+                    steps.append("")
+                    steps.append("=" * 60)
+                    steps.append(f"FINAL ANSWER: {result}")
+                    steps.append("=" * 60)
+                    print("\n".join(steps))
+
+                return result
+
+            if verbose:
+                steps.append("")
+
+        # Try Rational Zero Theorem
+        result = factor_higher_degree(reduced_poly, steps)
 
         if result:
             if gcf != 1:
