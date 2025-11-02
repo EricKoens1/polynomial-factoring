@@ -14,8 +14,9 @@ Supports both education mode (step-by-step) and quick mode (final answer only).
 
 import re
 import math
+import cmath
 from fractions import Fraction
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Union
 
 
 class Polynomial:
@@ -815,6 +816,232 @@ def factor_quadratic(poly: Polynomial, steps: List[str]) -> Optional[str]:
     return None
 
 
+def format_complex(z: complex, var: str = 'x') -> str:
+    """
+    Format a complex number in a nice readable form for factoring.
+
+    Args:
+        z: Complex number
+        var: Variable symbol
+
+    Returns:
+        String representation like "(x - (1 + √3i))" or "(x - 3)"
+    """
+    real = z.real
+    imag = z.imag
+
+    # Handle real numbers
+    if abs(imag) < 1e-10:
+        if abs(real) < 1e-10:
+            return var
+        elif real >= 0:
+            return f"({var} - {real:.4g})"
+        else:
+            return f"({var} + {abs(real):.4g})"
+
+    # Handle purely imaginary
+    if abs(real) < 1e-10:
+        if imag >= 0:
+            return f"({var} - {imag:.4g}i)"
+        else:
+            return f"({var} + {abs(imag):.4g}i)"
+
+    # Handle complex with both parts
+    real_str = f"{abs(real):.4g}"
+
+    # Simplify common imaginary values
+    imag_abs = abs(imag)
+    if abs(imag_abs - math.sqrt(3)) < 0.01:
+        imag_str = "√3"
+    elif abs(imag_abs - math.sqrt(2)) < 0.01:
+        imag_str = "√2"
+    elif abs(imag_abs - 1) < 0.01:
+        imag_str = ""
+    else:
+        imag_str = f"{imag_abs:.4g}"
+
+    # Build the complex number string
+    sign_imag = "+" if imag > 0 else "-"
+
+    if imag_str == "":
+        complex_str = f"{real_str} {sign_imag} i"
+    else:
+        complex_str = f"{real_str} {sign_imag} {imag_str}i"
+
+    return f"({var} - ({complex_str}))"
+
+
+def factor_quadratic_complex(a: float, b: float, c: float, var: str = 'x') -> Optional[Tuple[complex, complex, str]]:
+    """
+    Factor a quadratic over complex numbers using the quadratic formula.
+
+    Args:
+        a, b, c: Coefficients of ax² + bx + c
+        var: Variable symbol
+
+    Returns:
+        Tuple of (root1, root2, factored_string) or None if a=0
+    """
+    if a == 0:
+        return None
+
+    discriminant = b**2 - 4*a*c
+
+    # Use cmath.sqrt to handle negative discriminants
+    sqrt_disc = cmath.sqrt(discriminant)
+
+    root1 = (-b + sqrt_disc) / (2*a)
+    root2 = (-b - sqrt_disc) / (2*a)
+
+    # Build factored form
+    factor1 = format_complex(root1, var)
+    factor2 = format_complex(root2, var)
+
+    if a == 1:
+        result = f"{factor1}{factor2}"
+    else:
+        result = f"{a:.4g}{factor1}{factor2}"
+
+    return root1, root2, result
+
+
+def get_complex_factorization(factored_form: str, poly: Polynomial, verbose: bool = False) -> Optional[str]:
+    """
+    Take a factored form and further factor any irreducible quadratics over complex numbers.
+
+    Args:
+        factored_form: The factored form over integers (e.g., "(x + 2)(x² - 2x + 4)")
+        poly: Original polynomial
+        verbose: Whether to show steps
+
+    Returns:
+        Complex factored form if applicable, None otherwise
+    """
+    # Look for quadratic factors in the form (ax² ± bx ± c)
+    import re
+
+    # Pattern to match quadratic expressions
+    # This will match things like: x², 2x², -3x, +5, etc.
+    quadratic_pattern = r'\(([+-]?\d*\.?\d*)\s*x²\s*([+-]?\s*\d*\.?\d*)\s*x\s*([+-]?\s*\d+\.?\d*)\)'
+
+    matches = re.finditer(quadratic_pattern, factored_form.replace('^', ''))
+
+    complex_factors = []
+    has_complex = False
+
+    for match in matches:
+        # Extract coefficients
+        a_str = match.group(1).strip().replace(' ', '')
+        b_str = match.group(2).strip().replace(' ', '')
+        c_str = match.group(3).strip().replace(' ', '')
+
+        # Parse coefficients more carefully
+        try:
+            if not a_str or a_str == '+':
+                a = 1.0
+            elif a_str == '-':
+                a = -1.0
+            else:
+                a = float(a_str)
+
+            if not b_str or b_str == '+':
+                b = 1.0
+            elif b_str == '-':
+                b = -1.0
+            else:
+                b = float(b_str)
+
+            if not c_str or c_str == '+':
+                c = 1.0
+            elif c_str == '-':
+                c = -1.0
+            else:
+                c = float(c_str)
+        except ValueError:
+            # Skip this match if we can't parse
+            continue
+
+        # Check discriminant
+        discriminant = b**2 - 4*a*c
+
+        if discriminant < 0:
+            # This quadratic has complex roots
+            has_complex = True
+            result = factor_quadratic_complex(a, b, c, poly.variable)
+            if result:
+                _, _, complex_factored = result
+                complex_factors.append((match.group(0), complex_factored))
+
+    if not has_complex:
+        return None
+
+    # Replace quadratic factors with complex factorization
+    complex_form = factored_form
+    for original, replacement in complex_factors:
+        complex_form = complex_form.replace(original, replacement)
+
+    return complex_form
+
+
+def display_final_answer(result: str, poly: Polynomial, steps: List[str], verbose: bool) -> str:
+    """
+    Display the final answer with both real and complex factorizations if applicable.
+
+    Args:
+        result: The factored form over reals/integers
+        poly: Original polynomial
+        steps: List of step strings
+        verbose: Whether to show detailed output
+
+    Returns:
+        The result string
+    """
+    if verbose:
+        steps.append("")
+        steps.append("=" * 60)
+        steps.append(f"FACTORED FORM (over integers): {result}")
+
+        # Check if there's a complex factorization
+        complex_form = get_complex_factorization(result, poly, verbose)
+
+        # If no complex form found, check if result itself is an unfactored quadratic
+        if not complex_form:
+            # Try to parse the result as a polynomial to check for complex roots
+            try:
+                test_poly = parse_polynomial(result.replace('·', '*').split('*')[0] if '·' in result else result)
+                if test_poly.degree() == 2:
+                    coeffs = test_poly.coefficients
+                    if len(coeffs) == 3:
+                        a, b, c = coeffs[0], coeffs[1], coeffs[2]
+                        discriminant = b**2 - 4*a*c
+                        if discriminant < 0:
+                            # Factor over complex numbers
+                            result_complex = factor_quadratic_complex(a, b, c, test_poly.variable)
+                            if result_complex:
+                                _, _, complex_factored = result_complex
+                                complex_form = complex_factored
+                    elif len(coeffs) == 2:
+                        # x² + c form (no middle term)
+                        a, c = coeffs[0], coeffs[1]
+                        discriminant = -4*a*c
+                        if discriminant < 0:
+                            result_complex = factor_quadratic_complex(a, 0, c, test_poly.variable)
+                            if result_complex:
+                                _, _, complex_factored = result_complex
+                                complex_form = complex_factored
+            except:
+                pass
+
+        if complex_form:
+            steps.append("")
+            steps.append(f"FACTORED FORM (over complex numbers): {complex_form}")
+
+        steps.append("=" * 60)
+        print("\n".join(steps))
+
+    return result
+
+
 def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
     """
     Factor a polynomial using various methods.
@@ -863,14 +1090,7 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
         if gcf != 1:
             result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
 
-        if verbose:
-            steps.append("")
-            steps.append("=" * 60)
-            steps.append(f"FINAL ANSWER: {result}")
-            steps.append("=" * 60)
-            print("\n".join(steps))
-
-        return result
+        return display_final_answer(result, poly, steps, verbose)
 
     # Try perfect square trinomial
     result = factor_perfect_square_trinomial(reduced_poly, steps)
@@ -879,14 +1099,7 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
         if gcf != 1:
             result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
 
-        if verbose:
-            steps.append("")
-            steps.append("=" * 60)
-            steps.append(f"FINAL ANSWER: {result}")
-            steps.append("=" * 60)
-            print("\n".join(steps))
-
-        return result
+        return display_final_answer(result, poly, steps, verbose)
 
     # Try sum/difference of cubes
     result = factor_sum_difference_of_cubes(reduced_poly, steps)
@@ -895,14 +1108,7 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
         if gcf != 1:
             result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
 
-        if verbose:
-            steps.append("")
-            steps.append("=" * 60)
-            steps.append(f"FINAL ANSWER: {result}")
-            steps.append("=" * 60)
-            print("\n".join(steps))
-
-        return result
+        return display_final_answer(result, poly, steps, verbose)
 
     if verbose:
         steps.append("No special patterns detected")
@@ -920,14 +1126,7 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
             if gcf != 1:
                 result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
 
-            if verbose:
-                steps.append("")
-                steps.append("=" * 60)
-                steps.append(f"FINAL ANSWER: {result}")
-                steps.append("=" * 60)
-                print("\n".join(steps))
-
-            return result
+            return display_final_answer(result, poly, steps, verbose)
 
     elif reduced_poly.degree() >= 3:
         if verbose:
@@ -942,14 +1141,7 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
                 if gcf != 1:
                     result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
 
-                if verbose:
-                    steps.append("")
-                    steps.append("=" * 60)
-                    steps.append(f"FINAL ANSWER: {result}")
-                    steps.append("=" * 60)
-                    print("\n".join(steps))
-
-                return result
+                return display_final_answer(result, poly, steps, verbose)
 
             if verbose:
                 steps.append("")
@@ -961,14 +1153,7 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
             if gcf != 1:
                 result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
 
-            if verbose:
-                steps.append("")
-                steps.append("=" * 60)
-                steps.append(f"FINAL ANSWER: {result}")
-                steps.append("=" * 60)
-                print("\n".join(steps))
-
-            return result
+            return display_final_answer(result, poly, steps, verbose)
 
     # If we get here, the polynomial is prime or requires more advanced methods
     result = str(reduced_poly)
@@ -978,12 +1163,8 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
     if verbose:
         steps.append("")
         steps.append("Polynomial cannot be factored further over integers (prime)")
-        steps.append("=" * 60)
-        steps.append(f"FINAL ANSWER: {result}")
-        steps.append("=" * 60)
-        print("\n".join(steps))
 
-    return result
+    return display_final_answer(result, poly, steps, verbose)
 
 
 def main():
