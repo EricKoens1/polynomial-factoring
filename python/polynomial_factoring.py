@@ -366,13 +366,14 @@ def factor_quadratic(poly: Polynomial, steps: List[str]) -> Optional[str]:
         steps.append("  No integer factors found - polynomial is prime over integers")
         return None
 
-    # General case: AC method
+    # General case: AC method with grouping
     steps.append(f"Factoring {poly} using AC method:")
     steps.append(f"  a = {a}, b = {b}, c = {c}")
     steps.append(f"  AC = {a * c}")
 
     # Find two numbers that multiply to ac and add to b
     ac = a * c
+    found = False
 
     for i in range(1, abs(ac) + 1):
         if ac % i == 0:
@@ -380,98 +381,121 @@ def factor_quadratic(poly: Polynomial, steps: List[str]) -> Optional[str]:
 
             # Try different sign combinations
             for m, n in [(i, j), (-i, -j), (i, -j), (-i, j)]:
-                if m + n == b:
+                if m * n == ac and m + n == b:
                     steps.append(f"  Found two numbers: {m} and {n} (multiply to {ac}, add to {b})")
                     steps.append(f"  Rewrite middle term: {a}{var}² + {m}{var} + {n}{var} + {c}")
-                    steps.append(f"  Group terms: ({a}{var}² + {m}{var}) + ({n}{var} + {c})")
 
-                    # Factor by grouping
-                    # First group: factor out common
+                    # Now factor by grouping: (ax² + mx) + (nx + c)
+                    # First group: ax² + mx = x(ax + m)
+                    # Second group: nx + c = factor out GCD
+
                     from math import gcd
-                    gcf1 = gcd(a, m)
-                    term1_factor = gcf1
-                    term1_remain_coef1 = a // gcf1
-                    term1_remain_coef2 = m // gcf1
 
-                    if term1_remain_coef2 >= 0:
-                        group1 = f"{term1_factor}{var}({term1_remain_coef1}{var} + {term1_remain_coef2})"
-                    else:
-                        group1 = f"{term1_factor}{var}({term1_remain_coef1}{var} - {abs(term1_remain_coef2)})"
+                    # First group GCF
+                    gcf1 = gcd(abs(a), abs(m))
+                    # Always factor out x from first group
+                    first_coef = a // gcf1 if gcf1 > 1 else a
+                    first_const = m // gcf1 if gcf1 > 1 else m
 
-                    # Second group: factor out common
+                    # Second group GCF
                     gcf2 = gcd(abs(n), abs(c))
-                    if n < 0:
-                        gcf2 = -gcf2
-                    term2_factor = gcf2
-                    term2_remain_coef1 = n // gcf2
-                    term2_remain_coef2 = c // gcf2
+                    second_coef = n // gcf2
+                    second_const = c // gcf2
 
-                    if term2_remain_coef2 >= 0:
-                        group2 = f"{term2_factor}({term2_remain_coef1}{var} + {term2_remain_coef2})"
+                    # Build the groups
+                    if gcf1 == 1:
+                        # Factor out just x
+                        if m >= 0:
+                            group1_str = f"{var}({a}{var} + {m})"
+                        else:
+                            group1_str = f"{var}({a}{var} - {abs(m)})"
                     else:
-                        group2 = f"{term2_factor}({term2_remain_coef1}{var} - {abs(term2_remain_coef2)})"
+                        if first_const >= 0:
+                            group1_str = f"{gcf1}{var}({first_coef}{var} + {first_const})"
+                        else:
+                            group1_str = f"{gcf1}{var}({first_coef}{var} - {abs(first_const)})"
 
-                    steps.append(f"  Factor each group: {group1} + {group2}")
+                    if second_const >= 0:
+                        group2_str = f"{gcf2}({second_coef}{var} + {second_const})"
+                    else:
+                        group2_str = f"{gcf2}({second_coef}{var} - {abs(second_const)})"
 
-                    # Build final factored form (this is simplified)
-                    # For proper factoring, we need to ensure the common binomial matches
-                    # For now, use a simpler approach
+                    steps.append(f"  Group and factor: {group1_str} + {group2_str}")
 
-                    # Try factoring using the quadratic formula to find roots
-                    discriminant = b * b - 4 * a * c
-                    if discriminant >= 0:
-                        sqrt_disc = math.sqrt(discriminant)
-                        if sqrt_disc == int(sqrt_disc):
-                            sqrt_disc = int(sqrt_disc)
-                            r1_num = -b + sqrt_disc
-                            r2_num = -b - sqrt_disc
-                            denom = 2 * a
+                    # Now extract the common binomial factor
+                    # The factored form should be: (common_binomial)(other_factor)
+                    # For ax² + bx + c, after AC method we get: (px + q)(rx + s) where pr = a, qs = c
 
-                            # Check if roots are rational
-                            if r1_num % denom == 0 and r2_num % denom == 0:
-                                r1 = r1_num // denom
-                                r2 = r2_num // denom
+                    # Simpler approach: use the factorization directly from grouping
+                    # After grouping correctly, we should have matching binomials
 
-                                # Build factors from roots
-                                # If r is a root, then (x - r) is a factor
-                                # But we need to account for the leading coefficient
+                    # Let's compute it directly from first principles:
+                    # If we have ax² + bx + c and split b = m + n where mn = ac
+                    # Then ax² + mx + nx + c = x(ax + m) + (nx + c)/gcd(n,c) * gcd(n,c)
 
-                                # Simpler approach: build the factored form directly
-                                from math import gcd
-                                g = gcd(a, gcd(abs(b), abs(c)))
+                    # Better approach: just compute the final factors directly
+                    # For ax² + bx + c with m,n found, the factors are:
+                    # We need to find (px + q)(rx + s) where pr=a, m=ps, n=qr, qs=c
 
-                                # This is getting complex - let's use a direct approach
-                                # Factor as a(x - r1)(x - r2) where r1, r2 are roots
+                    # Use a cleaner method: find the actual factor pairs
+                    # The two factors have the form (dx + e)(fx + g) where df = a and eg = c
 
-                                factor1 = f"({var} - ({r1}))" if r1 != 0 else f"({var})"
-                                factor2 = f"({var} - ({r2}))" if r2 != 0 else f"({var})"
+                    # Find factor pairs of a
+                    a_factors = []
+                    for d in range(1, abs(a) + 1):
+                        if a % d == 0:
+                            f = a // d
+                            a_factors.append((d, f))
+                            if d != f:
+                                a_factors.append((f, d))
 
-                                if a != 1:
-                                    result = f"{a}{factor1}{factor2}"
-                                else:
+                    # Find factor pairs of c
+                    c_factors = []
+                    for e in range(0, abs(c) + 1):
+                        if c != 0 and c % (e if e != 0 else 1) == 0:
+                            g = c // e if e != 0 else c
+                            c_factors.append((e, g))
+                            if e != g and e != 0:
+                                c_factors.append((g, e))
+
+                    if c == 0:
+                        c_factors = [(0, 1), (1, 0)]
+
+                    # Try combinations considering signs
+                    for d, f in a_factors:
+                        for e, g in c_factors:
+                            # Try different sign combinations
+                            for e_sign, g_sign in [(1, 1), (1, -1), (-1, 1), (-1, -1)]:
+                                e_val = e * e_sign
+                                g_val = g * g_sign
+
+                                # Check if this gives us the correct middle term
+                                # (dx + e)(fx + g) = dfx² + (dg + ef)x + eg
+                                middle = d * g_val + e_val * f
+
+                                if middle == b and d * f == a and e_val * g_val == c:
+                                    # Found it!
+                                    # Build the factored form
+                                    if e_val >= 0:
+                                        factor1 = f"({d}{var} + {e_val})" if d != 1 else f"({var} + {e_val})"
+                                    else:
+                                        factor1 = f"({d}{var} - {abs(e_val)})" if d != 1 else f"({var} - {abs(e_val)})"
+
+                                    if g_val >= 0:
+                                        factor2 = f"({f}{var} + {g_val})" if f != 1 else f"({var} + {g_val})"
+                                    else:
+                                        factor2 = f"({f}{var} - {abs(g_val)})" if f != 1 else f"({var} - {abs(g_val)})"
+
                                     result = f"{factor1}{factor2}"
+                                    steps.append(f"  Factored form: {result}")
+                                    found = True
+                                    return result
 
-                                # Simplify the representation
-                                result = result.replace("- (-", "+ (").replace("(-", "-").replace("(", "").replace(")", "")
+                    if found:
+                        break
 
-                                # Rebuild properly
-                                if r1 >= 0:
-                                    f1 = f"({var} - {r1})" if r1 != 0 else var
-                                else:
-                                    f1 = f"({var} + {abs(r1)})"
-
-                                if r2 >= 0:
-                                    f2 = f"({var} - {r2})" if r2 != 0 else var
-                                else:
-                                    f2 = f"({var} + {abs(r2)})"
-
-                                if a != 1:
-                                    result = f"{a}{f1}{f2}"
-                                else:
-                                    result = f"{f1}{f2}"
-
-                                steps.append(f"  Factored form: {result}")
-                                return result
+            if found:
+                break
 
     steps.append("  No integer factors found - polynomial is prime over integers")
     return None
