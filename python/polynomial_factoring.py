@@ -352,8 +352,8 @@ def factor_quadratic(poly: Polynomial, steps: List[str]) -> Optional[str]:
 
                 # Try different sign combinations
                 for m, n in [(i, j), (-i, -j), (i, -j), (-i, j)]:
-                    if m + n == b:
-                        steps.append(f"  Found: {m} and {n}")
+                    if m * n == c and m + n == b:
+                        steps.append(f"  Found: {m} and {n} (multiply to {c}, add to {b})")
 
                         # Build factored form
                         factor1 = f"({var} + {m})" if m >= 0 else f"({var} - {abs(m)})"
