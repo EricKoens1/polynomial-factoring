@@ -218,12 +218,12 @@ def gcd_list(numbers: List[int]) -> int:
     return reduce(gcd, numbers)
 
 
-def factor_gcf(poly: Polynomial, steps: List[str]) -> Tuple[int, Polynomial]:
+def factor_gcf(poly: Polynomial, steps: List[str]) -> Tuple[Union[int, str], Polynomial]:
     """
-    Factor out the greatest common factor (GCF).
+    Factor out the greatest common factor (GCF), including variable powers.
 
     Returns:
-        Tuple of (GCF, reduced polynomial)
+        Tuple of (GCF as int or string, reduced polynomial)
     """
     # Find GCF of all coefficients
     non_zero_coefs = [abs(c) for c in poly.coefficients if c != 0]
@@ -231,24 +231,73 @@ def factor_gcf(poly: Polynomial, steps: List[str]) -> Tuple[int, Polynomial]:
     if not non_zero_coefs:
         return 1, poly
 
-    gcf = gcd_list(non_zero_coefs)
+    gcf_coef = gcd_list(non_zero_coefs)
 
     # Check if the leading coefficient is negative
     if poly.coefficients[0] < 0:
-        gcf = -gcf
+        gcf_coef = -gcf_coef
 
-    if abs(gcf) == 1:
-        steps.append("No common factor to extract (GCF = 1)")
-        return 1, poly
+    # Check for common variable powers
+    # If all terms have the variable, find the minimum power
+    degree = poly.degree()
+    min_power = None
 
-    # Divide all coefficients by GCF
-    new_coeffs = [c // gcf for c in poly.coefficients]
+    for i, coef in enumerate(poly.coefficients):
+        if coef != 0:
+            power = degree - i
+            if min_power is None:
+                min_power = power
+            else:
+                min_power = min(min_power, power)
+
+    # If minimum power is 0, no variable to factor out
+    if min_power is None or min_power == 0:
+        if abs(gcf_coef) == 1:
+            steps.append("No common factor to extract (GCF = 1)")
+            return 1, poly
+
+        # Divide all coefficients by GCF
+        new_coeffs = [c // gcf_coef for c in poly.coefficients]
+        reduced = Polynomial(new_coeffs, poly.variable)
+
+        steps.append(f"Factor out GCF of {gcf_coef}:")
+        steps.append(f"  {poly} = {gcf_coef}({reduced})")
+
+        return gcf_coef, reduced
+
+    # Factor out both coefficient and variable
+    # Create new polynomial with reduced powers
+    new_coeffs = []
+    for i, coef in enumerate(poly.coefficients):
+        power = degree - i
+        new_power = power - min_power
+        if new_power >= 0:
+            new_coeffs.append(coef // gcf_coef)
+
     reduced = Polynomial(new_coeffs, poly.variable)
 
-    steps.append(f"Factor out GCF of {gcf}:")
-    steps.append(f"  {poly} = {gcf}({reduced})")
+    # Build GCF string
+    if abs(gcf_coef) == 1:
+        if gcf_coef == 1:
+            if min_power == 1:
+                gcf_str = poly.variable
+            else:
+                gcf_str = f"{poly.variable}^{min_power}"
+        else:  # gcf_coef == -1
+            if min_power == 1:
+                gcf_str = f"-{poly.variable}"
+            else:
+                gcf_str = f"-{poly.variable}^{min_power}"
+    else:
+        if min_power == 1:
+            gcf_str = f"{gcf_coef}{poly.variable}"
+        else:
+            gcf_str = f"{gcf_coef}{poly.variable}^{min_power}"
 
-    return gcf, reduced
+    steps.append(f"Factor out GCF of {gcf_str}:")
+    steps.append(f"  {poly} = {gcf_str}({reduced})")
+
+    return gcf_str, reduced
 
 
 def is_perfect_square(n: int) -> Tuple[bool, int]:
@@ -1032,15 +1081,26 @@ def expand_factored_form(factored_str: str, variable: str = 'x') -> Optional[Pol
 
     try:
         # Remove the GCF multiplier if present
-        gcf = 1
+        gcf_poly = None
         if '·' in factored_str:
             parts = factored_str.split('·', 1)
             gcf_str = parts[0].strip()
             factored_str = parts[1].strip()
+
+            # Try to parse GCF (could be number, variable, or combination)
             try:
-                gcf = int(gcf_str)
+                gcf_poly = parse_polynomial(gcf_str)
             except:
-                gcf = float(gcf_str)
+                # If parsing fails, try as a number
+                try:
+                    gcf_val = int(gcf_str)
+                    gcf_poly = Polynomial([gcf_val], variable)
+                except:
+                    try:
+                        gcf_val = float(gcf_str)
+                        gcf_poly = Polynomial([int(gcf_val)], variable)
+                    except:
+                        pass
 
         # Handle perfect square notation like (x + 1)²
         factored_str = re.sub(r'\(([^)]+)\)²', r'(\1)(\1)', factored_str)
@@ -1070,8 +1130,8 @@ def expand_factored_form(factored_str: str, variable: str = 'x') -> Optional[Pol
                 result = result * factor_poly
 
         # Apply GCF
-        if result and gcf != 1:
-            result = result * gcf
+        if result and gcf_poly:
+            result = result * gcf_poly
 
         return result
 
@@ -1110,6 +1170,37 @@ def verify_factorization(original: Polynomial, factored_str: str, verbose: bool 
         return False
 
 
+def clean_factor_string(factor_str: str) -> str:
+    """
+    Clean up a factor string to look nicer.
+
+    Args:
+        factor_str: Factor string like "(x - 0)" or "(-1x + 2)"
+
+    Returns:
+        Cleaned string like "x" or "(2 - x)"
+    """
+    import re
+
+    # Replace (x - 0) with x
+    factor_str = re.sub(r'\(([a-z]) - 0\)', r'\1', factor_str)
+    factor_str = re.sub(r'\(([a-z]) \+ 0\)', r'\1', factor_str)
+
+    # Replace (x - 0)² with x²
+    factor_str = re.sub(r'\(([a-z]) - 0\)²', r'\1²', factor_str)
+
+    # Replace (-1x with (-x or flip sign patterns like (-1x + 2) to (2 - x)
+    factor_str = re.sub(r'\(-1([a-z])', r'(-\1', factor_str)
+
+    # Replace patterns like x² + -1 with x² - 1
+    factor_str = re.sub(r'\+ -', '- ', factor_str)
+
+    # Replace "1x" with "x" (but not in numbers like "11x")
+    factor_str = re.sub(r'(?<!\d)1([a-z])', r'\1', factor_str)
+
+    return factor_str
+
+
 def display_final_answer(result: str, poly: Polynomial, steps: List[str], verbose: bool) -> str:
     """
     Display the final answer with both real and complex factorizations if applicable.
@@ -1123,9 +1214,13 @@ def display_final_answer(result: str, poly: Polynomial, steps: List[str], verbos
     Returns:
         The result string
     """
+    # Clean up the result string for better display
+    result = clean_factor_string(result)
+
     if verbose:
         steps.append("")
         steps.append("=" * 60)
+
         steps.append(f"FACTORED FORM (over integers): {result}")
 
         # Verify the factorization
@@ -1215,7 +1310,7 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
     if reduced_poly.degree() == 0:
         if verbose:
             print("\n".join(steps))
-        return str(gcf) if gcf != 1 else str(reduced_poly)
+        return str(gcf) if gcf != 1 and gcf != "1" else str(reduced_poly)
 
     # Step 2: Check for special patterns
     if verbose:
@@ -1226,8 +1321,12 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
     result = factor_difference_of_squares(reduced_poly, steps)
 
     if result:
-        if gcf != 1:
-            result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+        if gcf != 1 and str(gcf) != "1":
+            # Check if gcf is negative integer for proper formatting
+            if isinstance(gcf, int) and gcf < 0:
+                result = f"({gcf})·{result}"
+            else:
+                result = f"{gcf}·{result}"
 
         return display_final_answer(result, poly, steps, verbose)
 
@@ -1235,8 +1334,11 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
     result = factor_perfect_square_trinomial(reduced_poly, steps)
 
     if result:
-        if gcf != 1:
-            result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+        if gcf != 1 and str(gcf) != "1":
+            if isinstance(gcf, int) and gcf < 0:
+                result = f"({gcf})·{result}"
+            else:
+                result = f"{gcf}·{result}"
 
         return display_final_answer(result, poly, steps, verbose)
 
@@ -1244,8 +1346,11 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
     result = factor_sum_difference_of_cubes(reduced_poly, steps)
 
     if result:
-        if gcf != 1:
-            result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+        if gcf != 1 and str(gcf) != "1":
+            if isinstance(gcf, int) and gcf < 0:
+                result = f"({gcf})·{result}"
+            else:
+                result = f"{gcf}·{result}"
 
         return display_final_answer(result, poly, steps, verbose)
 
@@ -1262,8 +1367,11 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
         result = factor_quadratic(reduced_poly, steps)
 
         if result:
-            if gcf != 1:
-                result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+            if gcf != 1 and str(gcf) != "1":
+                if isinstance(gcf, int) and gcf < 0:
+                    result = f"({gcf})·{result}"
+                else:
+                    result = f"{gcf}·{result}"
 
             return display_final_answer(result, poly, steps, verbose)
 
@@ -1277,8 +1385,11 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
             result = factor_by_grouping(reduced_poly, steps)
 
             if result:
-                if gcf != 1:
-                    result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+                if gcf != 1 and str(gcf) != "1":
+                    if isinstance(gcf, int) and gcf < 0:
+                        result = f"({gcf})·{result}"
+                    else:
+                        result = f"{gcf}·{result}"
 
                 return display_final_answer(result, poly, steps, verbose)
 
@@ -1289,19 +1400,32 @@ def factor_polynomial(poly: Polynomial, verbose: bool = True) -> str:
         result = factor_higher_degree(reduced_poly, steps)
 
         if result:
-            if gcf != 1:
-                result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+            if gcf != 1 and str(gcf) != "1":
+                if isinstance(gcf, int) and gcf < 0:
+                    result = f"({gcf})·{result}"
+                else:
+                    result = f"{gcf}·{result}"
 
             return display_final_answer(result, poly, steps, verbose)
 
     # If we get here, the polynomial is prime or requires more advanced methods
     result = str(reduced_poly)
-    if gcf != 1:
-        result = f"{gcf}·{result}" if gcf > 0 else f"({gcf})·{result}"
+    if gcf != 1 and str(gcf) != "1":
+        # Wrap the reduced polynomial in parentheses if there's a GCF
+        if isinstance(gcf, int) and gcf < 0:
+            result = f"({gcf})·({result})"
+        else:
+            result = f"{gcf}·({result})"
+    else:
+        # No GCF, but polynomial is unfactorable
+        pass
 
     if verbose:
         steps.append("")
-        steps.append("Polynomial cannot be factored further over integers (prime)")
+        if gcf != 1 and str(gcf) != "1":
+            steps.append("Remaining factor cannot be factored further over integers")
+        else:
+            steps.append("Polynomial cannot be factored further over integers (prime)")
 
     return display_final_answer(result, poly, steps, verbose)
 
