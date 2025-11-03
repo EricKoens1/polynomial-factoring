@@ -86,6 +86,40 @@ class Polynomial:
     def __repr__(self) -> str:
         return f"Polynomial({self.coefficients}, '{self.variable}')"
 
+    def __mul__(self, other):
+        """Multiply two polynomials."""
+        if isinstance(other, (int, float)):
+            # Scalar multiplication
+            new_coeffs = [c * other for c in self.coefficients]
+            return Polynomial(new_coeffs, self.variable)
+        elif isinstance(other, Polynomial):
+            # Polynomial multiplication
+            degree1 = self.degree()
+            degree2 = other.degree()
+            result_degree = degree1 + degree2
+
+            # Initialize result coefficients to zero
+            result_coeffs = [0] * (result_degree + 1)
+
+            # Multiply each term of self with each term of other
+            for i, coef1 in enumerate(self.coefficients):
+                power1 = degree1 - i
+                for j, coef2 in enumerate(other.coefficients):
+                    power2 = degree2 - j
+                    result_power = power1 + power2
+                    result_index = result_degree - result_power
+                    result_coeffs[result_index] += coef1 * coef2
+
+            return Polynomial(result_coeffs, self.variable)
+        else:
+            raise TypeError(f"Cannot multiply Polynomial with {type(other)}")
+
+    def __eq__(self, other):
+        """Check if two polynomials are equal."""
+        if not isinstance(other, Polynomial):
+            return False
+        return self.coefficients == other.coefficients and self.variable == other.variable
+
 
 def parse_polynomial(input_str: str) -> Polynomial:
     """
@@ -983,6 +1017,99 @@ def get_complex_factorization(factored_form: str, poly: Polynomial, verbose: boo
     return complex_form
 
 
+def expand_factored_form(factored_str: str, variable: str = 'x') -> Optional[Polynomial]:
+    """
+    Expand a factored form back to a polynomial.
+
+    Args:
+        factored_str: String like "(x + 2)(x - 3)" or "2·(x + 1)²"
+        variable: Variable symbol
+
+    Returns:
+        Expanded polynomial or None if parsing fails
+    """
+    import re
+
+    try:
+        # Remove the GCF multiplier if present
+        gcf = 1
+        if '·' in factored_str:
+            parts = factored_str.split('·', 1)
+            gcf_str = parts[0].strip()
+            factored_str = parts[1].strip()
+            try:
+                gcf = int(gcf_str)
+            except:
+                gcf = float(gcf_str)
+
+        # Handle perfect square notation like (x + 1)²
+        factored_str = re.sub(r'\(([^)]+)\)²', r'(\1)(\1)', factored_str)
+
+        # Extract all factors in parentheses
+        # Pattern matches (ax + b), (ax² + bx + c), etc.
+        factor_pattern = r'\([^)]+\)'
+        factors = re.findall(factor_pattern, factored_str)
+
+        if not factors:
+            # Maybe it's just a polynomial without factors
+            return parse_polynomial(factored_str)
+
+        # Parse each factor as a polynomial and multiply them together
+        result = None
+
+        for factor_str in factors:
+            # Remove parentheses
+            factor_str = factor_str[1:-1]
+
+            # Parse as polynomial
+            factor_poly = parse_polynomial(factor_str)
+
+            if result is None:
+                result = factor_poly
+            else:
+                result = result * factor_poly
+
+        # Apply GCF
+        if result and gcf != 1:
+            result = result * gcf
+
+        return result
+
+    except Exception as e:
+        return None
+
+
+def verify_factorization(original: Polynomial, factored_str: str, verbose: bool = False) -> bool:
+    """
+    Verify that the factored form expands to the original polynomial.
+
+    Args:
+        original: Original polynomial
+        factored_str: Factored form as string
+        verbose: Whether to show verification steps
+
+    Returns:
+        True if verification passes, False otherwise
+    """
+    expanded = expand_factored_form(factored_str, original.variable)
+
+    if expanded is None:
+        if verbose:
+            print("  [Verification] Could not parse factored form for verification")
+        return False
+
+    # Compare coefficients
+    if expanded == original:
+        if verbose:
+            print(f"  [Verification] ✓ Factored form expands correctly to: {expanded}")
+        return True
+    else:
+        if verbose:
+            print(f"  [Verification] ✗ ERROR: Factored form expands to {expanded}")
+            print(f"                        but original is {original}")
+        return False
+
+
 def display_final_answer(result: str, poly: Polynomial, steps: List[str], verbose: bool) -> str:
     """
     Display the final answer with both real and complex factorizations if applicable.
@@ -1000,6 +1127,18 @@ def display_final_answer(result: str, poly: Polynomial, steps: List[str], verbos
         steps.append("")
         steps.append("=" * 60)
         steps.append(f"FACTORED FORM (over integers): {result}")
+
+        # Verify the factorization
+        steps.append("")
+        is_valid = verify_factorization(poly, result, False)
+        if is_valid:
+            steps.append("VERIFICATION: ✓ Factorization is correct!")
+        else:
+            expanded = expand_factored_form(result, poly.variable)
+            if expanded:
+                steps.append(f"VERIFICATION: ✗ Warning - Expands to: {expanded}")
+            else:
+                steps.append("VERIFICATION: Could not verify (complex factors)")
 
         # Check if there's a complex factorization
         complex_form = get_complex_factorization(result, poly, verbose)
